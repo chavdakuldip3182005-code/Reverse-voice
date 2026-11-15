@@ -33,6 +33,8 @@
   #revBtn { background: var(--blue); }
   svg { width: 56px; height: 56px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
   svg .solid { fill: currentColor; stroke: none; }
+  .timer { font-size: 44px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: .02em; min-height: 52px; line-height: 52px; visibility: hidden; }
+  #recBtn.recording .timer { visibility: visible; }
   #recBtn.recording svg { animation: pulse 1s ease-in-out infinite; }
   @keyframes pulse { 50% { transform: scale(1.18); } }
   @media (prefers-reduced-motion: reduce) { #recBtn.recording svg { animation: none; } }
@@ -50,6 +52,7 @@
         <path d="M10 22a14 14 0 0 0 28 0M24 36v7M17 43h14"/>
       </svg>
       <span id="recLabel">Start Recording</span>
+      <span class="timer" id="timer" aria-hidden="true">0:00</span>
     </button>
 
     <button class="band" id="playBtn" type="button" disabled>
@@ -75,6 +78,23 @@
   var playLabel = document.getElementById('playLabel');
   var revLabel = document.getElementById('revLabel');
   var statusEl = document.getElementById('status');
+  var timerEl = document.getElementById('timer');
+  var recStart = 0, recTick = null, playTick = null;
+
+  function fmt(sec) {
+    sec = Math.max(0, sec);
+    var m = Math.floor(sec / 60), s = Math.floor(sec % 60);
+    return m + ':' + (s < 10 ? '0' : '') + s;
+  }
+  function startTimer() {
+    recStart = Date.now();
+    timerEl.textContent = '0:00';
+    clearInterval(recTick);
+    recTick = setInterval(function () {
+      timerEl.textContent = fmt((Date.now() - recStart) / 1000);
+    }, 200);
+  }
+  function stopTimer() { clearInterval(recTick); recTick = null; }
 
   var ctx = null, stream = null, recorder = null, chunks = [];
   var forwardBuf = null, reverseBuf = null;
@@ -158,6 +178,7 @@
   }
 
   function stopPlayback() {
+    clearInterval(playTick); playTick = null;
     if (currentSource) {
       currentSource.onended = null;
       try { currentSource.stop(); } catch (e) {}
@@ -178,14 +199,22 @@
     currentMode = mode;
     if (mode === 'fwd') playLabel.textContent = 'Stop';
     else revLabel.textContent = 'Stop';
-    setStatus(mode === 'fwd' ? 'Playing your recording...' : 'Playing in reverse...');
+    var dur = buf.duration, startAt = 0;
+    function tick() {
+      var t = Math.min(c.currentTime - startAt, dur);
+      setStatus((mode === 'fwd' ? 'Playing ' : 'Playing in reverse ') + fmt(t) + ' / ' + fmt(dur));
+    }
     src.onended = function () {
       if (currentSource === src) {
+        clearInterval(playTick); playTick = null;
         currentSource = null; currentMode = null; resetPlayLabels();
-        setStatus('Done. Play again or record a new one.');
+        setStatus('Done (' + fmt(dur) + '). Play again or record a new one.');
       }
     };
     src.start();
+    startAt = c.currentTime;
+    tick();
+    playTick = setInterval(tick, 200);
   }
 
   function micErrorMessage(e) {
@@ -237,11 +266,13 @@
     recBtn.classList.add('recording');
     recLabel.textContent = 'Stop Recording';
     setPlayEnabled(false);
+    startTimer();
     setStatus('Recording... tap again to stop.');
   }
 
   function stopRecording() {
     isRecording = false;
+    stopTimer();
     busy = true;
     recBtn.disabled = true; // wait until the audio is processed
     recBtn.classList.remove('recording');
@@ -260,7 +291,7 @@
       forwardBuf = buf;
       reverseBuf = makeReverse(buf);
       setPlayEnabled(true);
-      setStatus('Saved. Play your recording or play it in reverse.');
+      setStatus('Saved (' + fmt(buf.duration) + '). Play your recording or play it in reverse.');
       saveBlob(blob).catch(function () {});
     } catch (e) {
       setStatus('Nothing usable was recorded. Hold on a little longer, then tap Stop Recording.', true);
@@ -285,7 +316,7 @@
         forwardBuf = buf;
         reverseBuf = makeReverse(buf);
         setPlayEnabled(true);
-        setStatus('Your last recording is ready. Play it, or record a new one.');
+        setStatus('Your last recording (' + fmt(buf.duration) + ') is ready. Play it, or record a new one.');
       });
     }).catch(function () {});
   }
