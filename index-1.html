@@ -1,0 +1,904 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="auto">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a0e1c">
+<title>Reverse Voice</title>
+<style>
+  :root {
+    --bg: #0a0e1c; --surface: #141a2e; --surface2: #1f2742; --line: #2b3558;
+    --ink: #f4f6ff; --muted: #9ba5c7;
+    --red: #e0393e; --green: #1f9d55; --blue: #1a82c4; --accent: #5bb6ff;
+    color-scheme: dark;
+  }
+  :root[data-theme="light"] {
+    --bg: #eef1f8; --surface: #ffffff; --surface2: #e3e8f4; --line: #ced5e6;
+    --ink: #121830; --muted: #566086; --accent: #1a6fb0; color-scheme: light;
+  }
+  @media (prefers-color-scheme: light) {
+    :root[data-theme="auto"] {
+      --bg: #eef1f8; --surface: #ffffff; --surface2: #e3e8f4; --line: #ced5e6;
+      --ink: #121830; --muted: #566086; --accent: #1a6fb0; color-scheme: light;
+    }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  svg.i { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+  svg.i .f { fill: currentColor; stroke: none; }
+
+  .app { height: 100vh; height: 100dvh; display: flex; flex-direction: column; padding-top: env(safe-area-inset-top); }
+  .top { display: flex; align-items: center; gap: 10px; padding: 14px 18px 8px; }
+  .top svg { width: 30px; height: 30px; }
+  .top h1 { margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -.01em; }
+  main { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; }
+  .view { display: none; flex: 1; min-height: 0; flex-direction: column; }
+  .view.on { display: flex; }
+
+  /* Record view */
+  .status { min-height: 44px; padding: 2px 20px 8px; text-align: center; font-size: 15px; line-height: 1.4; color: var(--muted);
+    display: flex; align-items: center; justify-content: center; }
+  .status.error { color: #ff8a86; }
+  :root[data-theme="light"] .status.error { color: #c0322d; }
+  .bands { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; padding: 0 14px 12px; }
+  button.band { flex: 1; min-height: 84px; border: 0; border-radius: 24px; color: #fff; text-align: left; position: relative; overflow: hidden;
+    display: flex; flex-direction: column; gap: 6px; padding: 14px 16px 10px; transition: transform .12s, opacity .2s; }
+  button.band:active:not(:disabled) { transform: scale(.985); }
+  button.band:disabled { opacity: .45; cursor: not-allowed; }
+  button.band:focus-visible { outline-color: #fff; outline-offset: -6px; }
+  #recBtn { background: var(--red); } #playBtn { background: var(--green); } #revBtn { background: var(--blue); }
+  .bhead { display: flex; align-items: center; gap: 12px; }
+  .bico { width: 46px; height: 46px; border-radius: 50%; background: rgba(255,255,255,.2); display: flex; align-items: center; justify-content: center; flex: none; }
+  .bico svg.i { width: 26px; height: 26px; }
+  .btxt { flex: 1; min-width: 0; }
+  .blabel { font-size: 20px; font-weight: 700; line-height: 1.15; }
+  .bsub { font-size: 13px; opacity: .88; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .btime { display: none; align-items: center; gap: 8px; flex: none; }
+  #recBtn.recording .btime { display: flex; }
+  .timer { font-size: 32px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: .01em; }
+  .recdot { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 800; letter-spacing: .08em;
+    background: rgba(0,0,0,.3); padding: 3px 9px 3px 7px; border-radius: 999px; }
+  .recdot::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: #fff; animation: blink 1s steps(2, start) infinite; }
+  @keyframes blink { to { visibility: hidden; } }
+  @media (prefers-reduced-motion: reduce) { .recdot::before { animation: none; } button.band { transition: none; } }
+  canvas.wave { flex: 1; min-height: 0; width: 100%; display: block; color: #fff; }
+
+  /* Player */
+  .player { background: var(--surface); border-top: 1px solid var(--line); border-radius: 22px 22px 0 0; padding: 12px 16px 12px; }
+  .p-head { display: flex; align-items: center; gap: 10px; }
+  .p-title { flex: 1; min-width: 0; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .seg { display: inline-flex; background: var(--surface2); border-radius: 12px; padding: 3px; }
+  .seg button { border: 0; background: transparent; padding: 6px 12px; border-radius: 9px; font-size: 14px; color: var(--muted); }
+  .seg button.on { background: var(--blue); color: #fff; font-weight: 700; }
+  .seg button#segFwd.on { background: var(--green); }
+  .iconbtn { border: 0; background: transparent; width: 40px; height: 40px; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; color: var(--muted); }
+  .p-seek { display: flex; align-items: center; gap: 10px; margin-top: 6px; font-size: 13px; font-variant-numeric: tabular-nums; color: var(--muted); }
+  input[type=range] { -webkit-appearance: none; appearance: none; background: transparent; flex: 1; min-width: 0; height: 28px; margin: 0; }
+  input[type=range]::-webkit-slider-runnable-track { height: 6px; border-radius: 3px; background: linear-gradient(to right, var(--accent) var(--pct, 0%), var(--surface2) var(--pct, 0%)); }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%; background: var(--ink); border: 0; margin-top: -7px; box-shadow: 0 0 0 3px var(--surface); }
+  input[type=range]::-moz-range-track { height: 6px; border-radius: 3px; background: var(--surface2); }
+  input[type=range]::-moz-range-progress { height: 6px; border-radius: 3px; background: var(--accent); }
+  input[type=range]::-moz-range-thumb { width: 20px; height: 20px; border-radius: 50%; background: var(--ink); border: 0; }
+  .p-ctrl { display: flex; align-items: center; justify-content: space-between; margin-top: 2px; }
+  .p-ctrl button { border: 0; background: var(--surface2); height: 46px; min-width: 52px; border-radius: 14px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding: 0 10px; font-size: 13px; }
+  .p-ctrl button.main { background: var(--ink); color: var(--bg); min-width: 70px; border-radius: 23px; }
+  .p-ctrl button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+  .p-opts { display: flex; align-items: center; gap: 12px; margin-top: 8px; font-size: 13px; color: var(--muted); }
+  .p-opts label { display: flex; align-items: center; gap: 8px; }
+  .p-opts .vol { flex: 1; min-width: 0; }
+  select { font: inherit; color: var(--ink); background: var(--surface2); border: 1px solid var(--line); border-radius: 10px; padding: 6px 8px; }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 6px; background: var(--surface); border-top: 1px solid var(--line); padding: 6px 10px calc(6px + env(safe-area-inset-bottom)); }
+  .tabs button { flex: 1; border: 0; background: transparent; padding: 7px 4px; border-radius: 14px; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 12px; color: var(--muted); }
+  .tabs button[aria-selected="true"] { background: var(--surface2); color: var(--ink); font-weight: 700; }
+
+  /* History + settings */
+  .scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 14px 18px; }
+  .bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 18px; font-size: 14px; color: var(--muted); }
+  .empty { text-align: center; color: var(--muted); padding: 40px 20px; line-height: 1.5; }
+  .item { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 14px; margin-bottom: 10px; }
+  .item.cur { border-color: var(--accent); }
+  .item .name { font-weight: 700; word-break: break-word; }
+  .item .meta { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  canvas.mini { display: block; width: 100%; height: 34px; margin-top: 10px; color: var(--accent); }
+  .acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .acts button { border: 0; border-radius: 12px; padding: 9px 13px; background: var(--surface2); font-size: 14px; }
+  .acts button.g { background: var(--green); color: #fff; } .acts button.b { background: var(--blue); color: #fff; }
+  .acts button.d { color: #ff8a86; }
+  :root[data-theme="light"] .acts button.d { color: #c0322d; }
+  .group { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; margin-bottom: 14px; overflow: hidden; }
+  .group h2 { margin: 0; padding: 14px 16px 6px; font-size: 14px; color: var(--accent); font-weight: 700; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--line); min-height: 54px; }
+  .group h2 + .row { border-top: 0; }
+  .row .t { flex: 1; min-width: 0; }
+  .row .t small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; line-height: 1.35; }
+  .row input[type=range] { max-width: 150px; flex: none; width: 150px; }
+  input.sw { appearance: none; -webkit-appearance: none; width: 48px; height: 28px; border-radius: 14px; background: var(--surface2); border: 1px solid var(--line); position: relative; flex: none; transition: background .15s; }
+  input.sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 22px; height: 22px; border-radius: 50%; background: var(--muted); transition: transform .15s, background .15s; }
+  input.sw:checked { background: var(--accent); border-color: var(--accent); }
+  input.sw:checked::after { transform: translateX(20px); background: #fff; }
+  .btn { border: 0; border-radius: 12px; padding: 11px 14px; background: var(--surface2); font-size: 14px; }
+  .btn.danger { background: #b8322e; color: #fff; }
+  .btn.primary { background: var(--blue); color: #fff; font-weight: 700; }
+
+  /* Dialog + toast */
+  .overlay { position: fixed; inset: 0; background: rgba(4,6,14,.65); display: flex; align-items: flex-end; justify-content: center; z-index: 20; padding: 12px; }
+  .sheet { background: var(--surface); border: 1px solid var(--line); border-radius: 22px; width: 100%; max-width: 480px; padding: 18px; }
+  .sheet h3 { margin: 0 0 6px; font-size: 18px; }
+  .sheet p { margin: 0 0 12px; color: var(--muted); line-height: 1.45; }
+  .sheet input[type=text] { width: 100%; font: inherit; color: var(--ink); background: var(--surface2); border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 12px; }
+  .sheet .btns { display: flex; flex-direction: column; gap: 8px; }
+  .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(92px + env(safe-area-inset-bottom)); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 999px; font-size: 14px; z-index: 30; max-width: 90%; text-align: center; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-micsm" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path class="f" d="M7 4.5l13 7.5-13 7.5z"/></symbol>
+    <symbol id="i-rplay" viewBox="0 0 24 24"><path class="f" d="M17 4.5L4 12l13 7.5z"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><rect class="f" x="6" y="4.5" width="4.5" height="15" rx="1"/><rect class="f" x="13.5" y="4.5" width="4.5" height="15" rx="1"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect class="f" x="6" y="6" width="12" height="12" rx="2"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path class="f" d="M12 5.5L4 12l8 6.5zM20 5.5L12 12l8 6.5z"/></symbol>
+    <symbol id="i-fwd" viewBox="0 0 24 24"><path class="f" d="M12 5.5L20 12l-8 6.5zM4 5.5L12 12l-8 6.5z"/></symbol>
+    <symbol id="i-loop" viewBox="0 0 24 24"><path d="M17 2l4 4-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4M21 13v2a3 3 0 0 1-3 3H3"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+    <symbol id="i-list" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></symbol>
+    <symbol id="i-tune" viewBox="0 0 24 24"><path d="M4 7h9M19 7h1M4 17h1M11 17h9"/><circle cx="16" cy="7" r="2.5"/><circle cx="8" cy="17" r="2.5"/></symbol>
+  </defs>
+</svg>
+
+<div class="app">
+  <div class="top">
+    <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M15 5L3 16l12 11z" fill="#1a82c4"/><path d="M17 5l12 11-12 11z" fill="#2fb86b"/></svg>
+    <h1>Reverse Voice</h1>
+  </div>
+
+  <main>
+    <!-- RECORD -->
+    <section class="view on" id="view-record" aria-label="Record">
+      <div class="status" id="status" role="status" aria-live="polite">Tap Start Recording and speak.</div>
+      <div class="bands" id="bands">
+        <button class="band" id="recBtn" type="button">
+          <div class="bhead">
+            <span class="bico"><svg class="i"><use href="#i-micsm"/></svg></span>
+            <span class="btxt"><div class="blabel" id="recLabel">Start Recording</div><div class="bsub" id="recSub">Tap and speak</div></span>
+            <span class="btime" aria-hidden="true"><span class="recdot">REC</span><span class="timer" id="timer">0:00</span></span>
+          </div>
+          <canvas class="wave" id="waveRec" aria-hidden="true"></canvas>
+        </button>
+        <button class="band" id="playBtn" type="button" disabled>
+          <div class="bhead">
+            <span class="bico"><svg class="i"><use id="playIco" href="#i-play"/></svg></span>
+            <span class="btxt"><div class="blabel" id="playLabel">Play Recorded</div><div class="bsub" id="playSub">Record something first</div></span>
+          </div>
+          <canvas class="wave" id="waveFwd" aria-hidden="true"></canvas>
+        </button>
+        <button class="band" id="revBtn" type="button" disabled>
+          <div class="bhead">
+            <span class="bico"><svg class="i"><use id="revIco" href="#i-rplay"/></svg></span>
+            <span class="btxt"><div class="blabel" id="revLabel">Play Reverse</div><div class="bsub" id="revSub">Your voice, backwards</div></span>
+          </div>
+          <canvas class="wave" id="waveRev" aria-hidden="true"></canvas>
+        </button>
+      </div>
+    </section>
+
+    <!-- HISTORY -->
+    <section class="view" id="view-history" aria-label="Recording history">
+      <div class="bar">
+        <span id="histCount">0 recordings</span>
+        <label>Sort <select id="sortSel">
+          <option value="new">Newest</option><option value="old">Oldest</option>
+          <option value="long">Longest</option><option value="name">Name</option>
+        </select></label>
+      </div>
+      <div class="scroll" id="histList"></div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section class="view" id="view-settings" aria-label="Settings">
+      <div class="scroll">
+        <div class="group">
+          <h2>Appearance</h2>
+          <div class="row"><div class="t">Theme</div>
+            <select id="sTheme"><option value="auto">Match phone</option><option value="dark">Dark</option><option value="light">Light</option></select></div>
+          <div class="row"><div class="t">Vibrate on tap</div><input type="checkbox" class="sw" id="sVibrate" aria-label="Vibrate on tap"></div>
+        </div>
+
+        <div class="group">
+          <h2>Playback</h2>
+          <div class="row"><div class="t">Speed<small>Speed also changes pitch, like a tape.</small></div>
+            <select id="sSpeed"></select></div>
+          <div class="row"><div class="t">Volume</div><input type="range" id="sVol" min="0" max="1" step="0.01" aria-label="Volume"></div>
+          <div class="row"><div class="t">Loop</div><input type="checkbox" class="sw" id="sLoop" aria-label="Loop"></div>
+          <div class="row"><div class="t">Skip step</div>
+            <select id="sSkip"><option value="5">5 seconds</option><option value="10">10 seconds</option><option value="15">15 seconds</option><option value="30">30 seconds</option></select></div>
+          <div class="row"><div class="t">After recording<small>Play automatically when you stop.</small></div>
+            <select id="sAuto"><option value="off">Do nothing</option><option value="fwd">Play original</option><option value="rev">Play reverse</option></select></div>
+        </div>
+
+        <div class="group">
+          <h2>Recording (applies to the next recording)</h2>
+          <div class="row"><div class="t">Audio quality</div>
+            <select id="sBitrate"><option value="0">Automatic</option><option value="64000">Low (64 kbps)</option><option value="128000">Standard (128 kbps)</option><option value="192000">High (192 kbps)</option></select></div>
+          <div class="row"><div class="t">Echo cancellation</div><input type="checkbox" class="sw" id="sEcho" aria-label="Echo cancellation"></div>
+          <div class="row"><div class="t">Noise suppression</div><input type="checkbox" class="sw" id="sNoise" aria-label="Noise suppression"></div>
+          <div class="row"><div class="t">Automatic volume<small>Evens out quiet and loud voices.</small></div><input type="checkbox" class="sw" id="sAgc" aria-label="Automatic volume"></div>
+        </div>
+
+        <div class="group">
+          <h2>Storage</h2>
+          <div class="row"><div class="t">Saved recordings<small id="storageInfo">0 recordings</small></div>
+            <button class="btn danger" id="delAll" type="button">Delete all</button></div>
+        </div>
+
+        <div class="group">
+          <h2>About</h2>
+          <div class="row"><div class="t">Reverse Voice 2.0<small>Recordings stay on this phone. Reverse is made from the real audio samples, and nothing is uploaded.</small></div></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- PLAYER -->
+  <div class="player" id="player" hidden>
+    <div class="p-head">
+      <div class="p-title" id="pTitle">Recording</div>
+      <div class="seg" role="group" aria-label="Version">
+        <button type="button" id="segFwd" class="on">Original</button>
+        <button type="button" id="segRev">Reverse</button>
+      </div>
+      <button class="iconbtn" id="pClose" type="button" aria-label="Close player"><svg class="i"><use href="#i-close"/></svg></button>
+    </div>
+    <div class="p-seek">
+      <span id="pCur">0:00</span>
+      <input type="range" id="pSeek" min="0" max="1000" step="1" value="0" aria-label="Playback position">
+      <span id="pDur">0:00</span>
+    </div>
+    <div class="p-ctrl">
+      <button type="button" id="bBack" aria-label="Go back"><svg class="i"><use href="#i-back"/></svg><span id="skipBack">5s</span></button>
+      <button type="button" id="bPP" class="main" aria-label="Play"><svg class="i"><use id="ppIco" href="#i-play"/></svg></button>
+      <button type="button" id="bStop" aria-label="Stop"><svg class="i"><use href="#i-stop"/></svg></button>
+      <button type="button" id="bFwd" aria-label="Go forward"><span id="skipFwd">5s</span><svg class="i"><use href="#i-fwd"/></svg></button>
+      <button type="button" id="bLoop" aria-pressed="false" aria-label="Loop"><svg class="i"><use href="#i-loop"/></svg></button>
+    </div>
+    <div class="p-opts">
+      <label>Speed <select id="pSpeed"></select></label>
+      <label class="vol">Volume <input type="range" id="pVol" min="0" max="1" step="0.01" aria-label="Volume"></label>
+    </div>
+  </div>
+
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button type="button" role="tab" id="tab-record" data-view="record" aria-selected="true"><svg class="i"><use href="#i-micsm"/></svg>Record</button>
+    <button type="button" role="tab" id="tab-history" data-view="history" aria-selected="false"><svg class="i"><use href="#i-list"/></svg>History</button>
+    <button type="button" role="tab" id="tab-settings" data-view="settings" aria-selected="false"><svg class="i"><use href="#i-tune"/></svg>Settings</button>
+  </nav>
+</div>
+
+<div class="overlay" id="overlay" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="dTitle">
+    <h3 id="dTitle"></h3>
+    <p id="dText"></p>
+    <input type="text" id="dInput" maxlength="60" hidden>
+    <div class="btns" id="dBtns"></div>
+  </div>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+
+  /* ---------------- Settings ---------------- */
+  var DEFAULTS = { theme: 'auto', speed: 1, volume: 1, loop: false, skip: 5, autoplay: 'off',
+                   bitrate: 0, echo: true, noise: true, agc: true, vibrate: true, sort: 'new' };
+  var settings = (function () {
+    try { return Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem('rv-settings') || '{}')); }
+    catch (e) { return Object.assign({}, DEFAULTS); }
+  })();
+  function saveSettings() { try { localStorage.setItem('rv-settings', JSON.stringify(settings)); } catch (e) {} }
+  function tap() { if (settings.vibrate && navigator.vibrate) navigator.vibrate(12); }
+
+  /* ---------------- Helpers ---------------- */
+  function fmt(sec) {
+    sec = Math.max(0, sec || 0);
+    var m = Math.floor(sec / 60), s = Math.floor(sec % 60);
+    return m + ':' + (s < 10 ? '0' : '') + s;
+  }
+  function fmtBytes(n) {
+    if (n < 1024 * 1024) return Math.max(1, Math.round(n / 1024)) + ' KB';
+    return (n / 1024 / 1024).toFixed(1) + ' MB';
+  }
+  function fmtDate(ms) {
+    try { return new Date(ms).toLocaleString([], { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }); }
+    catch (e) { return new Date(ms).toString(); }
+  }
+  var toastTimer = null;
+  function toast(msg) {
+    var t = $('toast'); t.textContent = msg; t.hidden = false;
+    clearTimeout(toastTimer); toastTimer = setTimeout(function () { t.hidden = true; }, 3200);
+  }
+  function setUse(id, name) { $(id).setAttribute('href', '#' + name); }
+  function setPct(el) {
+    var min = parseFloat(el.min) || 0, max = parseFloat(el.max) || 100;
+    el.style.setProperty('--pct', ((parseFloat(el.value) - min) / (max - min) * 100) + '%');
+  }
+
+  /* ---------------- Waveforms ---------------- */
+  function calcPeaks(buf, n) {
+    var ch = buf.numberOfChannels, len = buf.length, out = new Array(n), size = Math.max(1, Math.floor(len / n)), mx = 0.0001, data = [], c, i;
+    for (c = 0; c < ch; c++) data.push(buf.getChannelData(c));
+    for (i = 0; i < n; i++) {
+      var s = i * size, e = Math.min(len, s + size), step = Math.max(1, Math.floor((e - s) / 200)), m = 0;
+      for (c = 0; c < ch; c++) { var d = data[c]; for (var j = s; j < e; j += step) { var v = Math.abs(d[j]); if (v > m) m = v; } }
+      out[i] = m; if (m > mx) mx = m;
+    }
+    for (i = 0; i < n; i++) out[i] = Math.sqrt(out[i] / mx);
+    return out;
+  }
+  function drawWave(cv, peaks, progress) {
+    if (!cv) return;
+    var w = cv.clientWidth, h = cv.clientHeight;
+    if (!w || !h) return;
+    var dpr = window.devicePixelRatio || 1, pw = Math.round(w * dpr), ph = Math.round(h * dpr);
+    if (cv.width !== pw || cv.height !== ph) { cv.width = pw; cv.height = ph; }
+    var g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+    var slot = 7, bw = 4, count = Math.max(8, Math.floor(w / slot)), vals = new Array(count), i;
+    if (!peaks || !peaks.length) { for (i = 0; i < count; i++) vals[i] = 0.07; }
+    else {
+      var n = peaks.length;
+      for (i = 0; i < count; i++) {
+        var a = Math.floor(i * n / count), b = Math.max(a + 1, Math.floor((i + 1) * n / count)), m = 0;
+        for (var k = a; k < b && k < n; k++) if (peaks[k] > m) m = peaks[k];
+        vals[i] = m;
+      }
+    }
+    g.fillStyle = getComputedStyle(cv).color;
+    var off = (w - count * slot + (slot - bw)) / 2;
+    for (i = 0; i < count; i++) {
+      var bh = Math.max(4, vals[i] * h * 0.95), x = off + i * slot, y = (h - bh) / 2;
+      g.globalAlpha = (i / count) < progress ? 1 : 0.5;
+      if (g.roundRect) { g.beginPath(); g.roundRect(x, y, bw, bh, bw / 2); g.fill(); } else g.fillRect(x, y, bw, bh);
+    }
+    g.globalAlpha = 1;
+  }
+
+  /* ---------------- Audio engine ---------------- */
+  var ctx = null, gain = null;
+  function getCtx() {
+    if (!ctx) {
+      ctx = new (window.AudioContext || window.webkitAudioContext)();
+      gain = ctx.createGain(); gain.gain.value = settings.volume; gain.connect(ctx.destination);
+    }
+    if (ctx.state === 'suspended') ctx.resume();
+    return ctx;
+  }
+  function decode(ab) {
+    var c = getCtx();
+    return new Promise(function (resolve, reject) {
+      var p = c.decodeAudioData(ab, resolve, reject);
+      if (p && p.catch) p.catch(reject);
+    });
+  }
+  function makeReverse(buf) {
+    var out = getCtx().createBuffer(buf.numberOfChannels, buf.length, buf.sampleRate);
+    for (var c = 0; c < buf.numberOfChannels; c++) {
+      var d = buf.getChannelData(c).slice(); d.reverse(); out.copyToChannel(d, c);
+    }
+    return out;
+  }
+  function toWav(buf) {
+    var ch = buf.numberOfChannels, len = buf.length, sr = buf.sampleRate, bytes = 44 + len * ch * 2;
+    var ab = new ArrayBuffer(bytes), v = new DataView(ab);
+    function ws(o, s) { for (var i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); }
+    ws(0, 'RIFF'); v.setUint32(4, bytes - 8, true); ws(8, 'WAVE'); ws(12, 'fmt ');
+    v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, ch, true);
+    v.setUint32(24, sr, true); v.setUint32(28, sr * ch * 2, true); v.setUint16(32, ch * 2, true); v.setUint16(34, 16, true);
+    ws(36, 'data'); v.setUint32(40, len * ch * 2, true);
+    var chans = []; for (var c = 0; c < ch; c++) chans.push(buf.getChannelData(c));
+    var o = 44;
+    for (var i = 0; i < len; i++) for (var k = 0; k < ch; k++) {
+      var s = Math.max(-1, Math.min(1, chans[k][i]));
+      v.setInt16(o, s < 0 ? s * 0x8000 : s * 0x7FFF, true); o += 2;
+    }
+    return new Blob([ab], { type: 'audio/wav' });
+  }
+
+  /* ---------------- Storage (IndexedDB) ---------------- */
+  function dbOpen() {
+    return new Promise(function (res, rej) {
+      var r = indexedDB.open('reverse-voice', 2);
+      r.onupgradeneeded = function () {
+        var db = r.result;
+        if (!db.objectStoreNames.contains('kv')) db.createObjectStore('kv');
+        if (!db.objectStoreNames.contains('recordings')) db.createObjectStore('recordings', { keyPath: 'id' });
+      };
+      r.onsuccess = function () { res(r.result); };
+      r.onerror = function () { rej(r.error); };
+    });
+  }
+  function dbDo(store, mode, fn) {
+    return dbOpen().then(function (db) {
+      return new Promise(function (res, rej) {
+        var t = db.transaction(store, mode), req = fn(t.objectStore(store));
+        t.oncomplete = function () { res(req ? req.result : undefined); };
+        t.onerror = function () { rej(t.error); };
+        t.onabort = function () { rej(t.error); };
+      });
+    });
+  }
+  function dbPut(rec) { return dbDo('recordings', 'readwrite', function (s) { return s.put(rec); }); }
+  function dbDelete(id) { return dbDo('recordings', 'readwrite', function (s) { return s.delete(id); }); }
+  function dbClear() { return dbDo('recordings', 'readwrite', function (s) { return s.clear(); }); }
+  function dbAll() { return dbDo('recordings', 'readonly', function (s) { return s.getAll(); }); }
+
+  /* ---------------- State ---------------- */
+  var recordings = [], current = null, cacheDec = null;
+  var stream = null, recorder = null, chunks = [];
+  var isRecording = false, busy = false, recStart = 0, recTick = null;
+  var vizSrc = null, analyser = null, vizRaf = 0, levels = [];
+  var P = { rec: null, fwd: null, rev: null, mode: 'fwd', buf: null, src: null, playing: false, offset: 0, startedAt: 0, raf: 0 };
+  var dragging = false;
+
+  function setStatus(msg, isErr) { var s = $('status'); s.textContent = msg; s.className = 'status' + (isErr ? ' error' : ''); }
+
+  /* ---------------- Player ---------------- */
+  function position() {
+    if (!P.buf) return 0;
+    if (!P.playing) return P.offset;
+    var p = P.offset + (getCtx().currentTime - P.startedAt) * settings.speed;
+    if (settings.loop && P.buf.duration > 0) p = p % P.buf.duration;
+    return Math.min(p, P.buf.duration);
+  }
+  function killSource() {
+    if (P.src) { P.src.onended = null; try { P.src.stop(); } catch (e) {} try { P.src.disconnect(); } catch (e) {} P.src = null; }
+  }
+  function startSource() {
+    var c = getCtx(); killSource();
+    var src = c.createBufferSource();
+    src.buffer = P.buf; src.loop = settings.loop; src.playbackRate.value = settings.speed; src.connect(gain);
+    if (P.offset >= P.buf.duration - 0.02) P.offset = 0;
+    P.startedAt = c.currentTime; P.src = src; P.playing = true;
+    src.onended = function () {
+      if (P.src === src) {
+        P.src = null; P.playing = false; P.offset = 0;
+        setStatus('Done (' + fmt(P.buf ? P.buf.duration : 0) + '). Play again or record a new one.');
+        updateUI();
+      }
+    };
+    src.start(0, P.offset);
+    tickLoop(); updateUI();
+  }
+  function pausePlayback() {
+    if (!P.playing) return;
+    P.offset = position(); killSource(); P.playing = false; updateUI();
+  }
+  function stopPlayback() {
+    killSource(); P.playing = false; P.offset = 0; updateUI();
+  }
+  function seekTo(t) {
+    if (!P.buf) return;
+    P.offset = Math.max(0, Math.min(t, P.buf.duration - 0.01));
+    if (P.playing) startSource(); else updateUI();
+  }
+  function skipBy(d) { if (P.buf) seekTo(position() + d); }
+  function setSpeed(v) {
+    if (P.playing) { P.offset = position(); P.startedAt = getCtx().currentTime; settings.speed = v; if (P.src) P.src.playbackRate.value = v; }
+    else settings.speed = v;
+    saveSettings(); syncSettingsUI();
+  }
+  function setLoop(on) {
+    if (P.playing) { P.offset = position(); P.startedAt = getCtx().currentTime; }
+    settings.loop = on; if (P.src) P.src.loop = on;
+    saveSettings(); syncSettingsUI(); updateUI();
+  }
+  function setVolume(v) { settings.volume = v; if (gain) gain.gain.value = v; saveSettings(); syncSettingsUI(); }
+  function setMode(mode) {
+    if (!P.rec || P.mode === mode) return;
+    var was = P.playing; killSource(); P.playing = false;
+    P.mode = mode; P.buf = mode === 'fwd' ? P.fwd : P.rev; P.offset = 0;
+    if (was) startSource(); else updateUI();
+  }
+  function closePlayer() {
+    killSource(); cancelAnimationFrame(P.raf);
+    P.playing = false; P.buf = null; P.rec = null; P.offset = 0;
+    updateUI(); renderHistory();
+  }
+  function tickLoop() {
+    cancelAnimationFrame(P.raf);
+    (function f() { updateTime(); if (P.playing) P.raf = requestAnimationFrame(f); })();
+  }
+  function updateTime() {
+    if (!P.buf) return;
+    var pos = position(), dur = P.buf.duration, sk = $('pSeek');
+    if (!dragging) { sk.value = dur ? Math.round(pos / dur * 1000) : 0; setPct(sk); }
+    $('pCur').textContent = fmt(pos); $('pDur').textContent = fmt(dur);
+    if (P.playing && !isRecording) setStatus((P.mode === 'fwd' ? 'Playing ' : 'Playing in reverse ') + fmt(pos) + ' / ' + fmt(dur));
+    drawBands();
+  }
+  function bandText(mode) {
+    var mine = P.buf && P.rec && current && P.rec.id === current.id && P.mode === mode;
+    if (mine && P.playing) return 'Pause';
+    if (mine && P.offset > 0.05) return 'Resume';
+    return mode === 'fwd' ? 'Play Recorded' : 'Play Reverse';
+  }
+  function drawBands() {
+    var pk = current && current.peaks ? current.peaks : null;
+    var pr = pk ? pk.slice().reverse() : null;
+    function prog(mode) {
+      if (!(P.buf && P.rec && current && P.rec.id === current.id && P.mode === mode)) return 0;
+      return P.buf.duration ? position() / P.buf.duration : 0;
+    }
+    drawWave($('waveRec'), isRecording ? levels : null, isRecording ? 1 : 0);
+    drawWave($('waveFwd'), pk, prog('fwd'));
+    drawWave($('waveRev'), pr, prog('rev'));
+  }
+  function updateUI() {
+    var has = !!P.buf;
+    $('player').hidden = !has;
+    if (has) {
+      $('pTitle').textContent = P.rec ? P.rec.name : '';
+      $('segFwd').classList.toggle('on', P.mode === 'fwd'); $('segRev').classList.toggle('on', P.mode === 'rev');
+      setUse('ppIco', P.playing ? 'i-pause' : 'i-play');
+      $('bPP').setAttribute('aria-label', P.playing ? 'Pause' : 'Play');
+      $('bLoop').setAttribute('aria-pressed', settings.loop ? 'true' : 'false');
+      updateTime();
+    }
+    var fwdMine = P.playing && P.mode === 'fwd' && P.rec && current && P.rec.id === current.id;
+    var revMine = P.playing && P.mode === 'rev' && P.rec && current && P.rec.id === current.id;
+    $('playLabel').textContent = bandText('fwd'); $('revLabel').textContent = bandText('rev');
+    setUse('playIco', fwdMine ? 'i-pause' : 'i-play'); setUse('revIco', revMine ? 'i-pause' : 'i-rplay');
+    $('playSub').textContent = current ? current.name + ' · ' + fmt(current.duration) : 'Record something first';
+    $('revSub').textContent = current ? 'Same recording, backwards' : 'Your voice, backwards';
+    $('recSub').textContent = isRecording ? 'Recording... tap to stop' : 'Tap and speak';
+    drawBands();
+  }
+  async function getDecoded(rec) {
+    if (cacheDec && cacheDec.id === rec.id) return cacheDec;
+    var fwd = await decode(await rec.blob.arrayBuffer());
+    cacheDec = { id: rec.id, fwd: fwd, rev: makeReverse(fwd) };
+    if (!rec.peaks) { rec.peaks = calcPeaks(fwd, 96); dbPut(rec).catch(function () {}); }
+    return cacheDec;
+  }
+  async function playRec(rec, mode) {
+    if (isRecording || busy) return;
+    getCtx();
+    try {
+      var d = await getDecoded(rec);
+      killSource();
+      P.rec = rec; P.fwd = d.fwd; P.rev = d.rev; P.mode = mode; P.buf = mode === 'fwd' ? d.fwd : d.rev; P.offset = 0;
+      current = rec; startSource(); renderHistory();
+    } catch (e) { toast('Could not play this recording.'); }
+  }
+  function togglePlay(mode) {
+    if (!current) return;
+    if (P.buf && P.rec && P.rec.id === current.id && P.mode === mode) {
+      if (P.playing) pausePlayback(); else startSource();
+    } else playRec(current, mode);
+  }
+
+  /* ---------------- Recording ---------------- */
+  var recBtn = $('recBtn'), timerEl = $('timer');
+  function startTimer() {
+    recStart = Date.now(); timerEl.textContent = '0:00'; clearInterval(recTick);
+    recTick = setInterval(function () { timerEl.textContent = fmt((Date.now() - recStart) / 1000); }, 200);
+  }
+  function stopTimer() { clearInterval(recTick); recTick = null; }
+  function startViz() {
+    levels = []; for (var i = 0; i < 80; i++) levels.push(0.04);
+    try {
+      var c = getCtx(); vizSrc = c.createMediaStreamSource(stream);
+      analyser = c.createAnalyser(); analyser.fftSize = 1024; vizSrc.connect(analyser);
+    } catch (e) { analyser = null; }
+    var data = new Uint8Array(1024), frame = 0;
+    (function f() {
+      if (!isRecording) return;
+      frame++;
+      if (analyser && frame % 4 === 0) {
+        analyser.getByteTimeDomainData(data);
+        var sum = 0; for (var i = 0; i < data.length; i++) { var v = (data[i] - 128) / 128; sum += v * v; }
+        var lvl = Math.min(1, Math.sqrt(sum / data.length) * 5);
+        levels.push(Math.max(0.04, Math.sqrt(lvl))); levels.shift();
+        drawWave($('waveRec'), levels, 1);
+      }
+      vizRaf = requestAnimationFrame(f);
+    })();
+  }
+  function stopViz() {
+    cancelAnimationFrame(vizRaf);
+    try { if (vizSrc) vizSrc.disconnect(); } catch (e) {}
+    vizSrc = null; analyser = null;
+  }
+  function micError(e) {
+    var n = e && e.name;
+    if (n === 'NotAllowedError' || n === 'SecurityError') return 'Microphone is blocked. Tap the lock icon next to the address, open Permissions, allow Microphone, then try again.';
+    if (n === 'NotFoundError') return 'No microphone found on this device.';
+    if (n === 'NotReadableError') return 'Another app is using the microphone. Close it and try again.';
+    return 'Could not start the microphone (' + (n || 'unknown error') + ').';
+  }
+  function pickMime() {
+    var types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'];
+    for (var i = 0; i < types.length; i++) if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(types[i])) return types[i];
+    return '';
+  }
+  async function startRecording() {
+    killSource(); P.playing = false; updateUI();
+    getCtx();
+    if (!window.isSecureContext) { setStatus('The microphone only works on an https link.', true); return; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) { setStatus('This browser cannot record audio. Please use Chrome.', true); return; }
+    busy = true; recBtn.disabled = true;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: settings.echo, noiseSuppression: settings.noise, autoGainControl: settings.agc } });
+    } catch (e) { busy = false; recBtn.disabled = false; setStatus(micError(e), true); return; }
+    chunks = [];
+    var opts = {}, mime = pickMime();
+    if (mime) opts.mimeType = mime;
+    if (settings.bitrate) opts.audioBitsPerSecond = settings.bitrate;
+    try { recorder = new MediaRecorder(stream, opts); }
+    catch (e) {
+      try { recorder = new MediaRecorder(stream); }
+      catch (e2) { stream.getTracks().forEach(function (t) { t.stop(); }); busy = false; recBtn.disabled = false; setStatus('This browser cannot record audio. Please use Chrome.', true); return; }
+    }
+    recorder.ondataavailable = function (ev) { if (ev.data && ev.data.size) chunks.push(ev.data); };
+    recorder.onstop = onRecorded;
+    recorder.start();
+    isRecording = true; busy = false; recBtn.disabled = false;
+    recBtn.classList.add('recording'); $('recLabel').textContent = 'Stop Recording';
+    $('playBtn').disabled = true; $('revBtn').disabled = true;
+    startTimer(); startViz(); $('recSub').textContent = 'Recording... tap to stop';
+    setStatus('Recording... tap again to stop.');
+  }
+  function stopRecording() {
+    isRecording = false; stopTimer(); stopViz(); busy = true; recBtn.disabled = true;
+    recBtn.classList.remove('recording'); $('recLabel').textContent = 'Start Recording'; $('recSub').textContent = 'Tap and speak';
+    setStatus('Saving your recording...'); drawBands();
+    if (recorder && recorder.state !== 'inactive') recorder.stop();
+  }
+  async function onRecorded() {
+    if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
+    try {
+      var blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
+      if (!blob.size) throw new Error('empty');
+      var buf = await decode(await blob.arrayBuffer());
+      var n = (parseInt(localStorage.getItem('rv-count') || '0', 10) || 0) + 1;
+      try { localStorage.setItem('rv-count', String(n)); } catch (e) {}
+      var rec = { id: 'r' + Date.now(), name: 'Recording ' + n, created: Date.now(), duration: buf.duration, blob: blob, peaks: calcPeaks(buf, 96) };
+      cacheDec = { id: rec.id, fwd: buf, rev: makeReverse(buf) };
+      recordings.unshift(rec); current = rec;
+      var saved = true;
+      try { await dbPut(rec); } catch (e) { saved = false; }
+      $('playBtn').disabled = false; $('revBtn').disabled = false;
+      updateUI(); renderHistory();
+      setStatus(saved ? 'Saved as "' + rec.name + '" (' + fmt(rec.duration) + '). Play it or play it in reverse.'
+                      : 'Ready (' + fmt(rec.duration) + '), but it could not be saved on this phone.', !saved);
+      if (settings.autoplay !== 'off') { busy = false; recBtn.disabled = false; playRec(rec, settings.autoplay === 'rev' ? 'rev' : 'fwd'); return; }
+    } catch (e) {
+      setStatus('Nothing usable was recorded. Record a little longer, then tap Stop Recording.', true);
+      $('playBtn').disabled = !current; $('revBtn').disabled = !current;
+    }
+    busy = false; recBtn.disabled = false;
+  }
+
+  /* ---------------- History ---------------- */
+  function sorted() {
+    var a = recordings.slice();
+    if (settings.sort === 'old') a.sort(function (x, y) { return x.created - y.created; });
+    else if (settings.sort === 'long') a.sort(function (x, y) { return y.duration - x.duration; });
+    else if (settings.sort === 'name') a.sort(function (x, y) { return x.name.localeCompare(y.name); });
+    else a.sort(function (x, y) { return y.created - x.created; });
+    return a;
+  }
+  function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function drawMinis() {
+    var cs = document.querySelectorAll('canvas.mini');
+    for (var i = 0; i < cs.length; i++) { var r = findRec(cs[i].dataset.id); drawWave(cs[i], r && r.peaks ? r.peaks : null, 1); }
+  }
+  function renderHistory() {
+    var list = $('histList'), total = recordings.reduce(function (s, r) { return s + (r.blob ? r.blob.size : 0); }, 0);
+    $('histCount').textContent = recordings.length + (recordings.length === 1 ? ' recording' : ' recordings');
+    $('storageInfo').textContent = recordings.length + (recordings.length === 1 ? ' recording' : ' recordings') + (recordings.length ? ' · ' + fmtBytes(total) : '');
+    if (!recordings.length) { list.innerHTML = '<div class="empty">No recordings yet.<br>Record one on the Record tab and it will appear here.</div>'; return; }
+    list.innerHTML = sorted().map(function (r) {
+      return '<div class="item' + (current && current.id === r.id ? ' cur' : '') + '" data-id="' + r.id + '">' +
+        '<div class="name">' + esc(r.name) + '</div>' +
+        '<div class="meta">' + esc(fmtDate(r.created)) + ' · ' + fmt(r.duration) + '</div>' +
+        '<canvas class="mini" data-id="' + r.id + '" aria-hidden="true"></canvas>' +
+        '<div class="acts">' +
+          '<button type="button" class="g" data-act="fwd">Play</button>' +
+          '<button type="button" class="b" data-act="rev">Reverse</button>' +
+          '<button type="button" data-act="rename">Rename</button>' +
+          '<button type="button" data-act="share">Share / Save</button>' +
+          '<button type="button" class="d" data-act="del">Delete</button>' +
+        '</div></div>';
+    }).join('');
+    drawMinis();
+  }
+  function findRec(id) { for (var i = 0; i < recordings.length; i++) if (recordings[i].id === id) return recordings[i]; return null; }
+
+  /* Dialog */
+  function closeDialog() { $('overlay').hidden = true; }
+  function openDialog(o) {
+    $('dTitle').textContent = o.title; $('dText').textContent = o.text || ''; $('dText').hidden = !o.text;
+    var inp = $('dInput'); inp.hidden = !o.input; if (o.input) inp.value = o.value || '';
+    var box = $('dBtns'); box.innerHTML = '';
+    o.actions.forEach(function (a) {
+      var b = document.createElement('button'); b.type = 'button'; b.className = 'btn' + (a.cls ? ' ' + a.cls : ''); b.textContent = a.label;
+      b.addEventListener('click', function () { var v = inp.value; closeDialog(); if (a.run) a.run(v); });
+      box.appendChild(b);
+    });
+    $('overlay').hidden = false;
+    if (o.input) { inp.focus(); inp.select(); } else if (box.firstChild) box.firstChild.focus();
+  }
+  $('overlay').addEventListener('click', function (e) { if (e.target === $('overlay')) closeDialog(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !$('overlay').hidden) closeDialog(); });
+
+  function safeName(s) { return (s || 'recording').replace(/[\\/:*?"<>|]+/g, '').trim() || 'recording'; }
+  async function exportFile(rec, which, mode) {
+    try {
+      var d = await getDecoded(rec);
+      var blob = toWav(which === 'rev' ? d.rev : d.fwd);
+      var fname = safeName(rec.name) + (which === 'rev' ? ' (reverse)' : '') + '.wav';
+      if (mode === 'share') {
+        var file = new File([blob], fname, { type: 'audio/wav' });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          try { await navigator.share({ files: [file], title: rec.name }); return; }
+          catch (e) { if (e && e.name === 'AbortError') return; }
+        }
+        toast('Sharing is not available here, so the file was saved instead.');
+      }
+      var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = fname;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 10000);
+      if (mode !== 'share') toast('Saved ' + fname + ' to your Downloads.');
+    } catch (e) { toast('Could not prepare the audio file.'); }
+  }
+  function shareDialog(rec) {
+    openDialog({ title: 'Share or save', text: rec.name, actions: [
+      { label: 'Share original', cls: 'primary', run: function () { exportFile(rec, 'fwd', 'share'); } },
+      { label: 'Share reverse', cls: 'primary', run: function () { exportFile(rec, 'rev', 'share'); } },
+      { label: 'Save original to phone', run: function () { exportFile(rec, 'fwd', 'save'); } },
+      { label: 'Save reverse to phone', run: function () { exportFile(rec, 'rev', 'save'); } },
+      { label: 'Cancel' } ] });
+  }
+  function renameDialog(rec) {
+    openDialog({ title: 'Rename recording', input: true, value: rec.name, actions: [
+      { label: 'Save', cls: 'primary', run: function (v) {
+        v = (v || '').trim(); if (!v) return toast('Name cannot be empty.');
+        rec.name = v; dbPut(rec).catch(function () {}); renderHistory(); updateUI(); toast('Renamed.'); } },
+      { label: 'Cancel' } ] });
+  }
+  function deleteRec(rec) {
+    openDialog({ title: 'Delete recording?', text: '"' + rec.name + '" will be deleted from this phone. This cannot be undone.', actions: [
+      { label: 'Delete', cls: 'danger', run: function () {
+        if (P.rec && P.rec.id === rec.id) closePlayer();
+        recordings = recordings.filter(function (r) { return r.id !== rec.id; });
+        if (cacheDec && cacheDec.id === rec.id) cacheDec = null;
+        if (current && current.id === rec.id) current = recordings[0] || null;
+        dbDelete(rec.id).catch(function () {});
+        $('playBtn').disabled = !current; $('revBtn').disabled = !current;
+        updateUI(); renderHistory(); toast('Deleted.'); } },
+      { label: 'Cancel' } ] });
+  }
+  $('histList').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-act]'); if (!b) return;
+    var item = b.closest('.item'), rec = item && findRec(item.dataset.id); if (!rec) return;
+    tap();
+    var act = b.dataset.act;
+    if (act === 'fwd' || act === 'rev') {
+      if (P.rec && P.rec.id === rec.id && P.mode === act && P.buf) { if (P.playing) pausePlayback(); else startSource(); }
+      else playRec(rec, act);
+    }
+    else if (act === 'rename') renameDialog(rec);
+    else if (act === 'share') shareDialog(rec);
+    else if (act === 'del') deleteRec(rec);
+  });
+
+  /* ---------------- Settings UI ---------------- */
+  var SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+  function fillSpeeds(sel) {
+    sel.innerHTML = SPEEDS.map(function (s) { return '<option value="' + s + '">' + s + 'x</option>'; }).join('');
+  }
+  function applyTheme() { document.documentElement.setAttribute('data-theme', settings.theme); }
+  function syncSettingsUI() {
+    $('sTheme').value = settings.theme; $('sVibrate').checked = settings.vibrate;
+    $('sSpeed').value = String(settings.speed); $('pSpeed').value = String(settings.speed);
+    $('sVol').value = settings.volume; $('pVol').value = settings.volume; setPct($('sVol')); setPct($('pVol'));
+    $('sLoop').checked = settings.loop; $('sSkip').value = String(settings.skip); $('sAuto').value = settings.autoplay;
+    $('sBitrate').value = String(settings.bitrate); $('sEcho').checked = settings.echo; $('sNoise').checked = settings.noise; $('sAgc').checked = settings.agc;
+    $('sortSel').value = settings.sort;
+    $('skipBack').textContent = settings.skip + 's'; $('skipFwd').textContent = settings.skip + 's';
+    $('bBack').setAttribute('aria-label', 'Go back ' + settings.skip + ' seconds'); $('bFwd').setAttribute('aria-label', 'Go forward ' + settings.skip + ' seconds');
+    $('bLoop').setAttribute('aria-pressed', settings.loop ? 'true' : 'false');
+  }
+  function bindSettings() {
+    fillSpeeds($('sSpeed')); fillSpeeds($('pSpeed'));
+    $('sTheme').addEventListener('change', function () { settings.theme = this.value; saveSettings(); applyTheme(); drawBands(); drawMinis(); });
+    $('sVibrate').addEventListener('change', function () { settings.vibrate = this.checked; saveSettings(); });
+    $('sSpeed').addEventListener('change', function () { setSpeed(parseFloat(this.value)); });
+    $('pSpeed').addEventListener('change', function () { setSpeed(parseFloat(this.value)); });
+    $('sVol').addEventListener('input', function () { setVolume(parseFloat(this.value)); });
+    $('pVol').addEventListener('input', function () { setVolume(parseFloat(this.value)); });
+    $('sLoop').addEventListener('change', function () { setLoop(this.checked); });
+    $('sSkip').addEventListener('change', function () { settings.skip = parseInt(this.value, 10); saveSettings(); syncSettingsUI(); });
+    $('sAuto').addEventListener('change', function () { settings.autoplay = this.value; saveSettings(); });
+    $('sBitrate').addEventListener('change', function () { settings.bitrate = parseInt(this.value, 10); saveSettings(); });
+    $('sEcho').addEventListener('change', function () { settings.echo = this.checked; saveSettings(); });
+    $('sNoise').addEventListener('change', function () { settings.noise = this.checked; saveSettings(); });
+    $('sAgc').addEventListener('change', function () { settings.agc = this.checked; saveSettings(); });
+    $('sortSel').addEventListener('change', function () { settings.sort = this.value; saveSettings(); renderHistory(); });
+    $('delAll').addEventListener('click', function () {
+      if (!recordings.length) return toast('There are no recordings to delete.');
+      openDialog({ title: 'Delete all recordings?', text: 'All ' + recordings.length + ' recordings will be deleted from this phone. This cannot be undone.', actions: [
+        { label: 'Delete all', cls: 'danger', run: function () {
+          closePlayer(); recordings = []; current = null; cacheDec = null;
+          dbClear().catch(function () {});
+          $('playBtn').disabled = true; $('revBtn').disabled = true;
+          updateUI(); renderHistory(); setStatus('Tap Start Recording and speak.'); toast('All recordings deleted.'); } },
+        { label: 'Cancel' } ] });
+    });
+  }
+
+  /* ---------------- Wiring ---------------- */
+  recBtn.addEventListener('click', function () { tap(); if (busy) return; if (isRecording) stopRecording(); else startRecording(); });
+  $('playBtn').addEventListener('click', function () { tap(); togglePlay('fwd'); });
+  $('revBtn').addEventListener('click', function () { tap(); togglePlay('rev'); });
+  $('bPP').addEventListener('click', function () { tap(); if (!P.buf) return; if (P.playing) pausePlayback(); else startSource(); });
+  $('bStop').addEventListener('click', function () { tap(); stopPlayback(); setStatus('Stopped.'); });
+  $('bBack').addEventListener('click', function () { tap(); skipBy(-settings.skip); });
+  $('bFwd').addEventListener('click', function () { tap(); skipBy(settings.skip); });
+  $('bLoop').addEventListener('click', function () { tap(); setLoop(!settings.loop); });
+  $('pClose').addEventListener('click', function () { tap(); closePlayer(); });
+  $('segFwd').addEventListener('click', function () { tap(); setMode('fwd'); });
+  $('segRev').addEventListener('click', function () { tap(); setMode('rev'); });
+  $('pSeek').addEventListener('input', function () { dragging = true; setPct(this); if (P.buf) $('pCur').textContent = fmt(this.value / 1000 * P.buf.duration); });
+  $('pSeek').addEventListener('change', function () { dragging = false; if (P.buf) seekTo(this.value / 1000 * P.buf.duration); });
+  window.addEventListener('resize', function () { drawBands(); drawMinis(); });
+  if (window.ResizeObserver) new ResizeObserver(function () { drawBands(); }).observe($('bands'));
+
+  var views = ['record', 'history', 'settings'];
+  function showView(name) {
+    views.forEach(function (v) {
+      $('view-' + v).classList.toggle('on', v === name);
+      $('tab-' + v).setAttribute('aria-selected', v === name ? 'true' : 'false');
+    });
+    if (name === 'history') renderHistory();
+    if (name === 'record') drawBands();
+  }
+  views.forEach(function (v) { $('tab-' + v).addEventListener('click', function () { tap(); showView(v); }); });
+
+  /* ---------------- Start-up ---------------- */
+  async function migrateOld() {
+    try {
+      var old = await dbDo('kv', 'readonly', function (s) { return s.get('last'); });
+      if (!old || recordings.length) return;
+      var buf = await decode(await old.arrayBuffer());
+      var rec = { id: 'r' + Date.now(), name: 'Recording 1', created: Date.now(), duration: buf.duration, blob: old, peaks: calcPeaks(buf, 96) };
+      await dbPut(rec); recordings.push(rec);
+      await dbDo('kv', 'readwrite', function (s) { return s.delete('last'); });
+      try { localStorage.setItem('rv-count', '1'); } catch (e) {}
+    } catch (e) {}
+  }
+  async function init() {
+    applyTheme(); bindSettings(); syncSettingsUI(); renderHistory(); drawBands();
+    if (!window.indexedDB) return;
+    try { recordings = await dbAll(); } catch (e) { recordings = []; }
+    await migrateOld();
+    if (recordings.length) {
+      current = recordings.slice().sort(function (a, b) { return b.created - a.created; })[0];
+      $('playBtn').disabled = false; $('revBtn').disabled = false;
+      setStatus('Your last recording (' + fmt(current.duration) + ') is ready. Play it, or record a new one.');
+    }
+    renderHistory(); updateUI();
+  }
+  init();
+})();
+</script>
+</body>
+</html>
