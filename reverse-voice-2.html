@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>Reverse Voice</title>
+<style>
+  :root {
+    --bg: #000;
+    --red: #dd5450;
+    --green: #5fbf6c;
+    --blue: #51b3d4;
+    --ink: #fff;
+    --muted: #9aa0a6;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .app { height: 100%; display: flex; flex-direction: column; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+  .status { min-height: 72px; padding: 16px 20px; text-align: center; font-size: 16px; line-height: 1.4; color: var(--muted);
+    display: flex; align-items: center; justify-content: center; }
+  .status.error { color: #ffb4ab; }
+  .bands { flex: 1; display: flex; flex-direction: column; max-height: 720px; margin: auto 0; width: 100%; }
+  button.band { flex: 1; border: 0; width: 100%; color: var(--ink); font: inherit; font-size: 20px; font-weight: 500;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; cursor: pointer;
+    transition: filter .15s, opacity .2s; }
+  button.band:active:not(:disabled) { filter: brightness(.88); }
+  button.band:disabled { opacity: .4; cursor: not-allowed; }
+  button.band:focus-visible { outline: 4px solid #fff; outline-offset: -8px; }
+  #recBtn { background: var(--red); }
+  #playBtn { background: var(--green); }
+  #revBtn { background: var(--blue); }
+  svg { width: 56px; height: 56px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  svg .solid { fill: currentColor; stroke: none; }
+  #recBtn.recording svg { animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { transform: scale(1.18); } }
+  @media (prefers-reduced-motion: reduce) { #recBtn.recording svg { animation: none; } }
+  .foot { padding: 12px 20px 18px; text-align: center; font-size: 13px; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="status" id="status" role="status" aria-live="polite">Tap Start Recording and speak.</div>
+
+  <div class="bands">
+    <button class="band" id="recBtn" type="button">
+      <svg viewBox="0 0 48 48" aria-hidden="true">
+        <rect x="17" y="5" width="14" height="24" rx="7"/>
+        <path d="M10 22a14 14 0 0 0 28 0M24 36v7M17 43h14"/>
+      </svg>
+      <span id="recLabel">Start Recording</span>
+    </button>
+
+    <button class="band" id="playBtn" type="button" disabled>
+      <svg viewBox="0 0 48 48" aria-hidden="true"><path class="solid" d="M14 8l26 16-26 16z"/></svg>
+      <span id="playLabel">Play Recorded</span>
+    </button>
+
+    <button class="band" id="revBtn" type="button" disabled>
+      <svg viewBox="0 0 48 48" aria-hidden="true"><path class="solid" d="M34 8L8 24l26 16z"/></svg>
+      <span id="revLabel">Play Reverse</span>
+    </button>
+  </div>
+
+  <div class="foot">Reverse is made on your phone. Nothing is uploaded.</div>
+</div>
+
+<script>
+(function () {
+  var recBtn = document.getElementById('recBtn');
+  var playBtn = document.getElementById('playBtn');
+  var revBtn = document.getElementById('revBtn');
+  var recLabel = document.getElementById('recLabel');
+  var playLabel = document.getElementById('playLabel');
+  var revLabel = document.getElementById('revLabel');
+  var statusEl = document.getElementById('status');
+
+  var ctx = null, stream = null, recorder = null, chunks = [];
+  var forwardBuf = null, reverseBuf = null;
+  var isRecording = false, busy = false, currentSource = null, currentMode = null;
+
+  function setStatus(msg, isError) {
+    statusEl.textContent = msg;
+    statusEl.className = 'status' + (isError ? ' error' : '');
+  }
+
+  // Create/resume the audio engine inside the tap itself so Chrome allows sound.
+  function getCtx() {
+    if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (ctx.state === 'suspended') ctx.resume();
+    return ctx;
+  }
+
+  function setPlayEnabled(on) {
+    playBtn.disabled = !on;
+    revBtn.disabled = !on;
+  }
+
+  function pickMime() {
+    var types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'];
+    for (var i = 0; i < types.length; i++) {
+      if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(types[i])) return types[i];
+    }
+    return '';
+  }
+
+  function makeReverse(buf) {
+    var out = getCtx().createBuffer(buf.numberOfChannels, buf.length, buf.sampleRate);
+    for (var c = 0; c < buf.numberOfChannels; c++) {
+      var data = buf.getChannelData(c).slice();
+      data.reverse();
+      out.copyToChannel(data, c);
+    }
+    return out;
+  }
+
+  function decode(arrayBuffer) {
+    var c = getCtx();
+    return new Promise(function (resolve, reject) {
+      var p = c.decodeAudioData(arrayBuffer, resolve, reject);
+      if (p && p.catch) p.catch(reject);
+    });
+  }
+
+  // ---- Save the last recording on the phone so it is still there after reload ----
+  function dbOpen() {
+    return new Promise(function (res, rej) {
+      var r = indexedDB.open('reverse-voice', 1);
+      r.onupgradeneeded = function () { r.result.createObjectStore('kv'); };
+      r.onsuccess = function () { res(r.result); };
+      r.onerror = function () { rej(r.error); };
+    });
+  }
+  function saveBlob(blob) {
+    return dbOpen().then(function (db) {
+      return new Promise(function (res, rej) {
+        var tx = db.transaction('kv', 'readwrite');
+        tx.objectStore('kv').put(blob, 'last');
+        tx.oncomplete = res;
+        tx.onerror = function () { rej(tx.error); };
+      });
+    });
+  }
+  function loadBlob() {
+    return dbOpen().then(function (db) {
+      return new Promise(function (res, rej) {
+        var req = db.transaction('kv', 'readonly').objectStore('kv').get('last');
+        req.onsuccess = function () { res(req.result || null); };
+        req.onerror = function () { rej(req.error); };
+      });
+    });
+  }
+
+  function resetPlayLabels() {
+    playLabel.textContent = 'Play Recorded';
+    revLabel.textContent = 'Play Reverse';
+  }
+
+  function stopPlayback() {
+    if (currentSource) {
+      currentSource.onended = null;
+      try { currentSource.stop(); } catch (e) {}
+      currentSource = null;
+    }
+    currentMode = null;
+    resetPlayLabels();
+  }
+
+  function play(buf, mode) {
+    if (currentMode === mode) { stopPlayback(); setStatus('Stopped.'); return; }
+    stopPlayback();
+    var c = getCtx();
+    var src = c.createBufferSource();
+    src.buffer = buf;
+    src.connect(c.destination);
+    currentSource = src;
+    currentMode = mode;
+    if (mode === 'fwd') playLabel.textContent = 'Stop';
+    else revLabel.textContent = 'Stop';
+    setStatus(mode === 'fwd' ? 'Playing your recording...' : 'Playing in reverse...');
+    src.onended = function () {
+      if (currentSource === src) {
+        currentSource = null; currentMode = null; resetPlayLabels();
+        setStatus('Done. Play again or record a new one.');
+      }
+    };
+    src.start();
+  }
+
+  function micErrorMessage(e) {
+    var n = e && e.name;
+    if (n === 'NotAllowedError' || n === 'SecurityError') {
+      return 'Microphone is blocked. In Chrome tap the lock icon next to the address, open Permissions, and allow Microphone. Then try again.';
+    }
+    if (n === 'NotFoundError') return 'No microphone found on this device.';
+    if (n === 'NotReadableError') return 'Another app is using the microphone. Close it and try again.';
+    return 'Could not start the microphone (' + (n || 'unknown error') + ').';
+  }
+
+  async function startRecording() {
+    stopPlayback();
+    getCtx(); // inside the tap, before any waiting
+    if (!window.isSecureContext) {
+      setStatus('The microphone only works on an https link. Host this file (Netlify Drop or GitHub Pages) and open that link in Chrome.', true);
+      return;
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
+      setStatus('This browser cannot record audio. Please use Chrome.', true);
+      return;
+    }
+    busy = true;
+    recBtn.disabled = true;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+      busy = false; recBtn.disabled = false;
+      setStatus(micErrorMessage(e), true);
+      return;
+    }
+    chunks = [];
+    var mime = pickMime();
+    try {
+      recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+    } catch (e) {
+      stream.getTracks().forEach(function (t) { t.stop(); });
+      busy = false; recBtn.disabled = false;
+      setStatus('This browser cannot record audio. Please use Chrome.', true);
+      return;
+    }
+    recorder.ondataavailable = function (ev) { if (ev.data && ev.data.size) chunks.push(ev.data); };
+    recorder.onstop = onRecorded;
+    recorder.start();
+    isRecording = true;
+    busy = false;
+    recBtn.disabled = false;
+    recBtn.classList.add('recording');
+    recLabel.textContent = 'Stop Recording';
+    setPlayEnabled(false);
+    setStatus('Recording... tap again to stop.');
+  }
+
+  function stopRecording() {
+    isRecording = false;
+    busy = true;
+    recBtn.disabled = true; // wait until the audio is processed
+    recBtn.classList.remove('recording');
+    recLabel.textContent = 'Start Recording';
+    setStatus('Preparing your audio...');
+    if (recorder && recorder.state !== 'inactive') recorder.stop();
+  }
+
+  async function onRecorded() {
+    if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
+    try {
+      var blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
+      if (!blob.size) throw new Error('empty');
+      var ab = await blob.arrayBuffer();
+      var buf = await decode(ab);
+      forwardBuf = buf;
+      reverseBuf = makeReverse(buf);
+      setPlayEnabled(true);
+      setStatus('Saved. Play your recording or play it in reverse.');
+      saveBlob(blob).catch(function () {});
+    } catch (e) {
+      setStatus('Nothing usable was recorded. Hold on a little longer, then tap Stop Recording.', true);
+    }
+    busy = false;
+    recBtn.disabled = false;
+  }
+
+  recBtn.addEventListener('click', function () {
+    if (busy) return;
+    if (isRecording) stopRecording(); else startRecording();
+  });
+  playBtn.addEventListener('click', function () { if (forwardBuf) play(forwardBuf, 'fwd'); });
+  revBtn.addEventListener('click', function () { if (reverseBuf) play(reverseBuf, 'rev'); });
+
+  // Bring back the last saved recording when the page opens.
+  if (window.indexedDB) {
+    loadBlob().then(function (blob) {
+      if (!blob) return;
+      return blob.arrayBuffer().then(decode).then(function (buf) {
+        if (forwardBuf) return; // user already recorded something new
+        forwardBuf = buf;
+        reverseBuf = makeReverse(buf);
+        setPlayEnabled(true);
+        setStatus('Your last recording is ready. Play it, or record a new one.');
+      });
+    }).catch(function () {});
+  }
+})();
+</script>
+</body>
+</html>
